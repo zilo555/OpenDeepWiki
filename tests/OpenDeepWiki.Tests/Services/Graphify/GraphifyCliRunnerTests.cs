@@ -53,7 +53,11 @@ if [ -n "$out" ]; then
 fi
 
 previous=""
+is_cluster_only=""
 for arg in "$@"; do
+  if [ "$arg" = "cluster-only" ]; then
+    is_cluster_only="1"
+  fi
   if [ "$previous" = "--graph" ]; then
     dir="$(dirname "$arg")"
     mkdir -p "$dir"
@@ -61,6 +65,10 @@ for arg in "$@"; do
   fi
   previous="$arg"
 done
+
+if [ -n "$is_cluster_only" ]; then
+  echo '# Report from cluster-only' > "$dir/GRAPH_REPORT.md"
+fi
 """);
         File.SetUnixFileMode(
             fakePython,
@@ -96,8 +104,10 @@ done
             Assert.Contains($"ENV_GRAPHIFY_OUT={Path.Combine(result.OutputRoot, "graphify-out")}", capture);
             Assert.Contains("--backend", capture);
             Assert.Contains("openai", capture);
+            Assert.Contains("cluster-only", capture);
             Assert.True(File.Exists(result.GraphJsonPath));
             Assert.True(File.Exists(result.EntryFilePath));
+            Assert.True(File.Exists(result.ReportPath));
             var labelsPath = Path.Combine(result.OutputRoot, "graphify-out", ".graphify_labels.json");
             var labels = await File.ReadAllTextAsync(labelsPath);
             Assert.Contains("\"0\": \"Community 0\"", labels);
@@ -148,7 +158,11 @@ JSON
 fi
 
 previous=""
+is_cluster_only=""
 for arg in "$@"; do
+  if [ "$arg" = "cluster-only" ]; then
+    is_cluster_only="1"
+  fi
   if [ "$previous" = "--graph" ]; then
     dir="$(dirname "$arg")"
     mkdir -p "$dir"
@@ -156,6 +170,10 @@ for arg in "$@"; do
   fi
   previous="$arg"
 done
+
+if [ -n "$is_cluster_only" ]; then
+  echo '# Report from cluster-only' > "$dir/GRAPH_REPORT.md"
+fi
 """);
         File.SetUnixFileMode(
             fakePython,
@@ -193,6 +211,7 @@ done
                 Path.Combine(result.OutputRoot, "graphify-out", ".graphify_labels.json"));
             Assert.Contains("\"0\": \"Tasklet Workflow\"", labels);
             Assert.Contains("\"1\": \"Arc Client\"", labels);
+            Assert.True(File.Exists(result.ReportPath));
         }
         finally
         {

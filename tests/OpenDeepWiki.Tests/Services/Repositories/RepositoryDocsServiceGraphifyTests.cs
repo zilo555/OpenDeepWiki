@@ -136,6 +136,79 @@ public class RepositoryDocsServiceGraphifyTests
         Assert.Equal(StatusCodes.Status404NotFound, httpContext.Response.StatusCode);
     }
 
+    [Fact]
+    public async Task GetGraphifyReportAsync_WhenReportExists_ReturnsMarkdown()
+    {
+        await using var context = CreateContext();
+        var seed = SeedRepositoryWithDocument(context);
+        var reportPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.md");
+        await File.WriteAllTextAsync(reportPath, "# Graph Report");
+        try
+        {
+            var artifact = new GraphifyArtifact
+            {
+                Id = Guid.NewGuid().ToString(),
+                RepositoryId = seed.RepositoryId,
+                RepositoryBranchId = seed.BranchId,
+                Status = GraphifyArtifactStatus.Completed,
+                ReportPath = reportPath
+            };
+            var graphify = new Mock<IGraphifyArtifactService>(MockBehavior.Strict);
+            graphify
+                .Setup(service => service.GetCompletedArtifactAsync(Owner, Repo, "main", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(artifact);
+            var service = CreateService(context, graphify.Object);
+
+            var result = await service.GetGraphifyReportAsync(Owner, Repo, "main");
+
+            var (httpContext, responseBody) = CreateHttpContext();
+            await using (responseBody)
+            {
+                await result.ExecuteAsync(httpContext);
+
+                responseBody.Position = 0;
+                var body = await new StreamReader(responseBody).ReadToEndAsync();
+                Assert.Equal(StatusCodes.Status200OK, httpContext.Response.StatusCode);
+                Assert.Equal("text/markdown; charset=utf-8", httpContext.Response.ContentType);
+                Assert.Contains("# Graph Report", body);
+            }
+        }
+        finally
+        {
+            File.Delete(reportPath);
+        }
+    }
+
+    [Fact]
+    public async Task GetGraphifyReportAsync_WhenReportIsMissing_ReturnsNotFound()
+    {
+        await using var context = CreateContext();
+        var seed = SeedRepositoryWithDocument(context);
+        var artifact = new GraphifyArtifact
+        {
+            Id = Guid.NewGuid().ToString(),
+            RepositoryId = seed.RepositoryId,
+            RepositoryBranchId = seed.BranchId,
+            Status = GraphifyArtifactStatus.Completed,
+            ReportPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.md")
+        };
+        var graphify = new Mock<IGraphifyArtifactService>(MockBehavior.Strict);
+        graphify
+            .Setup(service => service.GetCompletedArtifactAsync(Owner, Repo, "main", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(artifact);
+        var service = CreateService(context, graphify.Object);
+
+        var result = await service.GetGraphifyReportAsync(Owner, Repo, "main");
+
+        var (httpContext, responseBody) = CreateHttpContext();
+        await using (responseBody)
+        {
+            await result.ExecuteAsync(httpContext);
+        }
+
+        Assert.Equal(StatusCodes.Status404NotFound, httpContext.Response.StatusCode);
+    }
+
     private static (DefaultHttpContext Context, MemoryStream ResponseBody) CreateHttpContext()
     {
         var responseBody = new MemoryStream();

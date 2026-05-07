@@ -243,6 +243,29 @@ public class RepositoryDocsService(
         return Results.File(entryPath, "text/html; charset=utf-8");
     }
 
+    [HttpGet("/{owner}/{repo}/graphify/report")]
+    public async Task<IResult> GetGraphifyReportAsync(
+        string owner,
+        string repo,
+        [FromQuery] string? branch = null)
+    {
+        (owner, repo) = RepositoryRouteDecoder.DecodeOwnerAndRepo(owner, repo);
+
+        var artifact = await graphifyArtifactService.GetCompletedArtifactAsync(owner, repo, branch);
+        if (artifact == null || string.IsNullOrWhiteSpace(artifact.ReportPath))
+        {
+            return Results.NotFound("Graphify report not found");
+        }
+
+        var reportPath = Path.GetFullPath(artifact.ReportPath);
+        if (!System.IO.File.Exists(reportPath))
+        {
+            return Results.NotFound("Graphify report file not found");
+        }
+
+        return Results.File(reportPath, "text/markdown; charset=utf-8");
+    }
+
     /// <summary>
     /// 仅保留已经生成内容的文档及其全部祖先目录节点。
     /// 用于在仓库生成过程中返回可浏览的部分文档树。

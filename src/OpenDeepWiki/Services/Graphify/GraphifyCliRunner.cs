@@ -103,13 +103,18 @@ public class GraphifyCliRunner : IGraphifyCliRunner
 
         await RunGraphifyCommandAsync(
             workspace.WorkingDirectory,
-            ["export", "html", "--graph", graphJsonPath],
+            ["cluster-only", artifactRoot, "--graph", graphJsonPath],
             logBuilder,
             token,
             new Dictionary<string, string>
             {
                 ["GRAPHIFY_OUT"] = graphifyOut
             });
+
+        if (!File.Exists(reportPath))
+        {
+            throw new FileNotFoundException("Graphify did not produce GRAPH_REPORT.md", reportPath);
+        }
 
         if (!File.Exists(entryFilePath))
         {
