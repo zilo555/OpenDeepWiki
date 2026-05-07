@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using System.Net;
+using System.Text;
 using OpenDeepWiki.Services.Graphify;
 using OpenDeepWiki.Services.Repositories;
 using Xunit;
@@ -74,6 +76,7 @@ done
                     OutputRoot = outputRoot,
                     OpenAiBaseUrl = "https://openai-compatible.example/v1",
                     OpenAiApiKey = "test-openai-key",
+                    EnableLlmCommunityLabels = false,
                     TimeoutMinutes = 1
                 }),
                 NullLogger<GraphifyCliRunner>.Instance);
@@ -107,6 +110,119 @@ done
             {
                 Directory.Delete(tempRoot, recursive: true);
             }
+        }
+    }
+
+    [Fact]
+    public async Task GenerateAsync_WithOpenAiOverrides_UsesLlmCommunityLabels()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        var workspace = Path.Combine(tempRoot, "workspace");
+        var outputRoot = Path.Combine(tempRoot, "artifacts");
+        Directory.CreateDirectory(workspace);
+
+        var fakePython = Path.Combine(tempRoot, "fake-python.sh");
+        await File.WriteAllTextAsync(fakePython, """
+#!/usr/bin/env bash
+out=""
+previous=""
+for arg in "$@"; do
+  if [ "$previous" = "--out" ]; then
+    out="$arg"
+  fi
+  previous="$arg"
+done
+
+if [ -n "$out" ]; then
+  mkdir -p "$out/graphify-out"
+  cat > "$out/graphify-out/graph.json" <<'JSON'
+{"nodes":[{"id":"tasklet_node","label":"ClaudeCodeTasklet","source_file":"app/src/tasklet.ts","file_type":"code"},{"id":"arc_node","label":"ArcClient","source_file":"app/src/arc/client.ts","file_type":"code"}],"links":[{"source":"tasklet_node","target":"arc_node"}]}
+JSON
+  echo '{"communities":{"0":["tasklet_node"],"1":["arc_node"]}}' > "$out/graphify-out/.graphify_analysis.json"
+  echo '{"0":"Community 0","1":"Community 1"}' > "$out/graphify-out/.graphify_labels.json"
+fi
+
+previous=""
+for arg in "$@"; do
+  if [ "$previous" = "--graph" ]; then
+    dir="$(dirname "$arg")"
+    mkdir -p "$dir"
+    echo '<html></html>' > "$dir/graph.html"
+  fi
+  previous="$arg"
+done
+""");
+        File.SetUnixFileMode(
+            fakePython,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+
+        try
+        {
+            var responseJson = """
+{"choices":[{"message":{"content":"{\"labels\":{\"0\":\"Tasklet Workflow\",\"1\":\"Arc Client\"}}"}}]}
+""";
+            using var httpClient = new HttpClient(new StubHttpMessageHandler(responseJson));
+            var runner = new GraphifyCliRunner(
+                Options.Create(new GraphifyOptions
+                {
+                    PythonCommand = fakePython,
+                    OutputRoot = outputRoot,
+                    OpenAiBaseUrl = "https://openai-compatible.example/v1",
+                    OpenAiApiKey = "test-openai-key",
+                    Model = "test-model",
+                    TimeoutMinutes = 1
+                }),
+                NullLogger<GraphifyCliRunner>.Instance,
+                httpClient);
+
+            var result = await runner.GenerateAsync(new RepositoryWorkspace
+            {
+                WorkingDirectory = workspace,
+                Organization = "owner",
+                RepositoryName = "repo",
+                BranchName = "main",
+                CommitId = "commit"
+            });
+
+            var labels = await File.ReadAllTextAsync(
+                Path.Combine(result.OutputRoot, "graphify-out", ".graphify_labels.json"));
+            Assert.Contains("\"0\": \"Tasklet Workflow\"", labels);
+            Assert.Contains("\"1\": \"Arc Client\"", labels);
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    private sealed class StubHttpMessageHandler(string responseJson) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Assert.Equal(HttpMethod.Post, request.Method);
+            Assert.Equal("https://openai-compatible.example/v1/chat/completions", request.RequestUri?.ToString());
+            Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
+            Assert.Equal("test-openai-key", request.Headers.Authorization?.Parameter);
+
+            var requestBody = await request.Content!.ReadAsStringAsync(cancellationToken);
+            Assert.Contains("test-model", requestBody);
+            Assert.Contains("ClaudeCodeTasklet", requestBody);
+            Assert.Contains("ArcClient", requestBody);
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(responseJson, Encoding.UTF8, "application/json")
+            };
         }
     }
 }
