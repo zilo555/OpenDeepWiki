@@ -31,6 +31,7 @@ public class GraphifyCliRunnerTests
     echo "$arg"
   done
   echo "ENV_OPENAI_API_KEY=$OPENAI_API_KEY"
+  echo "ENV_GRAPHIFY_OUT=$GRAPHIFY_OUT"
 } >> "$GRAPHIFY_CAPTURE_FILE"
 
 out=""
@@ -45,6 +46,7 @@ done
 if [ -n "$out" ]; then
   mkdir -p "$out/graphify-out"
   echo '{"nodes":[],"edges":[]}' > "$out/graphify-out/graph.json"
+  echo '{"communities":{"0":["a"],"1":["b"]}}' > "$out/graphify-out/.graphify_analysis.json"
   echo '# Report' > "$out/graphify-out/GRAPH_REPORT.md"
 fi
 
@@ -88,10 +90,15 @@ done
             var capture = await File.ReadAllTextAsync(captureFile);
             Assert.Contains("https://openai-compatible.example/v1", capture);
             Assert.Contains("ENV_OPENAI_API_KEY=test-openai-key", capture);
+            Assert.Contains($"ENV_GRAPHIFY_OUT={Path.Combine(result.OutputRoot, "graphify-out")}", capture);
             Assert.Contains("--backend", capture);
             Assert.Contains("openai", capture);
             Assert.True(File.Exists(result.GraphJsonPath));
             Assert.True(File.Exists(result.EntryFilePath));
+            var labelsPath = Path.Combine(result.OutputRoot, "graphify-out", ".graphify_labels.json");
+            var labels = await File.ReadAllTextAsync(labelsPath);
+            Assert.Contains("\"0\": \"Community 0\"", labels);
+            Assert.Contains("\"1\": \"Community 1\"", labels);
         }
         finally
         {

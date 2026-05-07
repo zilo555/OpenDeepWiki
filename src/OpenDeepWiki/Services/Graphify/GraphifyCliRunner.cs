@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Options;
 using OpenDeepWiki.Services.Repositories;
 
@@ -89,11 +90,17 @@ public class GraphifyCliRunner : IGraphifyCliRunner
             throw new FileNotFoundException("Graphify did not produce graph.json", graphJsonPath);
         }
 
+        await EnsureCommunityLabelsAsync(graphifyOut, token);
+
         await RunGraphifyCommandAsync(
             workspace.WorkingDirectory,
             ["export", "html", "--graph", graphJsonPath],
             logBuilder,
-            token);
+            token,
+            new Dictionary<string, string>
+            {
+                ["GRAPHIFY_OUT"] = graphifyOut
+            });
 
         if (!File.Exists(entryFilePath))
         {
@@ -129,6 +136,43 @@ public class GraphifyCliRunner : IGraphifyCliRunner
         return args.ToArray();
     }
 
+    private static async Task EnsureCommunityLabelsAsync(
+        string graphifyOut,
+        CancellationToken cancellationToken)
+    {
+        var labelsPath = Path.Combine(graphifyOut, ".graphify_labels.json");
+        if (File.Exists(labelsPath))
+        {
+            return;
+        }
+
+        var analysisPath = Path.Combine(graphifyOut, ".graphify_analysis.json");
+        if (!File.Exists(analysisPath))
+        {
+            return;
+        }
+
+        await using var stream = File.OpenRead(analysisPath);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        if (!document.RootElement.TryGetProperty("communities", out var communities) ||
+            communities.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        var labels = communities
+            .EnumerateObject()
+            .ToDictionary(
+                community => community.Name,
+                community => $"Community {community.Name}");
+
+        var json = JsonSerializer.Serialize(labels, new JsonSerializerOptions
+        {
+            WriteIndented = true
+        });
+        await File.WriteAllTextAsync(labelsPath, json, cancellationToken);
+    }
+
     private string? ResolveBackend()
     {
         if (!string.IsNullOrWhiteSpace(_options.Backend))
@@ -143,9 +187,10 @@ public class GraphifyCliRunner : IGraphifyCliRunner
         string workingDirectory,
         IReadOnlyList<string> arguments,
         StringBuilder logBuilder,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
-        var startInfo = CreateGraphifyStartInfo(workingDirectory, arguments);
+        var startInfo = CreateGraphifyStartInfo(workingDirectory, arguments, environment);
 
         _logger.LogInformation(
             "Running Graphify command. Command: {Command}, Arguments: {Arguments}, WorkingDirectory: {WorkingDirectory}",
@@ -183,7 +228,8 @@ public class GraphifyCliRunner : IGraphifyCliRunner
 
     private ProcessStartInfo CreateGraphifyStartInfo(
         string workingDirectory,
-        IReadOnlyList<string> arguments)
+        IReadOnlyList<string> arguments,
+        IReadOnlyDictionary<string, string>? environment)
     {
         var usePythonLauncher = !string.IsNullOrWhiteSpace(_options.OpenAiBaseUrl);
         var startInfo = new ProcessStartInfo
@@ -210,6 +256,14 @@ public class GraphifyCliRunner : IGraphifyCliRunner
         if (!string.IsNullOrWhiteSpace(_options.OpenAiApiKey))
         {
             startInfo.Environment["OPENAI_API_KEY"] = _options.OpenAiApiKey;
+        }
+
+        if (environment != null)
+        {
+            foreach (var item in environment)
+            {
+                startInfo.Environment[item.Key] = item.Value;
+            }
         }
 
         return startInfo;
