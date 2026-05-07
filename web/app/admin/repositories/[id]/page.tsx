@@ -38,11 +38,14 @@ import { toast } from "sonner";
 import { useTranslations } from "@/hooks/use-translations";
 import { useLocale } from "next-intl";
 import {
+  AdminGraphifyArtifact,
   AdminIncrementalTask,
   AdminRepository,
   AdminRepositoryManagement,
+  generateRepositoryGraphify,
   getIncrementalUpdateTask,
   getRepository,
+  getRepositoryGraphifyArtifacts,
   getRepositoryManagement,
   regenerateRepository,
   regenerateRepositoryDocument,
@@ -158,6 +161,7 @@ export default function AdminRepositoryManagementPage() {
   const [management, setManagement] = useState<AdminRepositoryManagement | null>(null);
   const [logs, setLogs] = useState<ProcessingLogResponse | null>(null);
   const [doc, setDoc] = useState<RepoDocResponse | null>(null);
+  const [graphifyArtifacts, setGraphifyArtifacts] = useState<AdminGraphifyArtifact[]>([]);
   const [docOptions, setDocOptions] = useState<DocOption[]>([]);
   const [docTreeNodes, setDocTreeNodes] = useState<RepoTreeNode[]>([]);
   const [expandedDocSlugs, setExpandedDocSlugs] = useState<Set<string>>(new Set());
@@ -176,6 +180,7 @@ export default function AdminRepositoryManagementPage() {
   const [syncingStats, setSyncingStats] = useState(false);
   const [regeneratingRepo, setRegeneratingRepo] = useState(false);
   const [regeneratingDoc, setRegeneratingDoc] = useState(false);
+  const [generatingGraphify, setGeneratingGraphify] = useState(false);
   const [triggeringIncremental, setTriggeringIncremental] = useState(false);
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [taskRefreshingId, setTaskRefreshingId] = useState<string | null>(null);
@@ -190,6 +195,15 @@ export default function AdminRepositoryManagementPage() {
     if (!selectedBranch) return null;
     return selectedBranch.languages.find((item) => item.languageCode === selectedLanguage) ?? null;
   }, [selectedBranch, selectedLanguage]);
+
+  const selectedGraphifyArtifact = useMemo(() => {
+    if (!selectedBranch) return null;
+    return graphifyArtifacts.find((artifact) => artifact.repositoryBranchId === selectedBranch.id) ?? null;
+  }, [graphifyArtifacts, selectedBranch]);
+
+  const repositoryOwner = repository?.orgName ?? "";
+  const repositoryName = repository?.repoName ?? "";
+  const selectedBranchName = selectedBranch?.name ?? "";
 
   const isDocDirty = useMemo(
     () => isEditingDoc && doc?.exists && docDraft !== (doc.content ?? ""),
@@ -378,12 +392,14 @@ export default function AdminRepositoryManagementPage() {
 
     setPageLoading(true);
     try {
-      const [repoData, managementData] = await Promise.all([
+      const [repoData, managementData, graphifyData] = await Promise.all([
         getRepository(repositoryId),
         getRepositoryManagement(repositoryId),
+        getRepositoryGraphifyArtifacts(repositoryId),
       ]);
       setRepository(repoData);
       setManagement(managementData);
+      setGraphifyArtifacts(graphifyData);
     } catch (error) {
       console.error("Failed to load repository management data:", error);
       toast.error(t("admin.repositories.management.toasts.loadManagementFailed"));
@@ -537,6 +553,29 @@ export default function AdminRepositoryManagementPage() {
   }, [loadDoc]);
 
   useEffect(() => {
+    const isGraphifyActive = selectedGraphifyArtifact &&
+      ["pending", "processing"].includes(normalizeTaskStatus(selectedGraphifyArtifact.statusName));
+
+    if (!isGraphifyActive || !repositoryId) {
+      return;
+    }
+
+    const intervalId = window.setInterval(async () => {
+      try {
+        const artifacts = await getRepositoryGraphifyArtifacts(repositoryId);
+        setGraphifyArtifacts(artifacts);
+        await loadLogs({ silent: true });
+      } catch (error) {
+        console.error("Failed to refresh Graphify artifacts:", error);
+      }
+    }, 10000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [selectedGraphifyArtifact, repositoryId, loadLogs]);
+
+  useEffect(() => {
     if (!selectedDocSlug || docTreeNodes.length === 0) return;
     const trail = findNodeTrail(docTreeNodes, selectedDocSlug);
     if (!trail) return;
@@ -642,6 +681,31 @@ export default function AdminRepositoryManagementPage() {
       toast.error(t("admin.repositories.management.toasts.regenerateAllFailed"));
     } finally {
       setRegeneratingRepo(false);
+    }
+  };
+
+  const handleGenerateGraphify = async () => {
+    if (!repositoryId || !selectedBranch) {
+      toast.warning(t("admin.repositories.management.toasts.selectBranchFirst"));
+      return;
+    }
+
+    setGeneratingGraphify(true);
+    try {
+      const result = await generateRepositoryGraphify(repositoryId, selectedBranch.id);
+      if (result.success) {
+        toast.success(result.message || t("admin.repositories.management.toasts.graphifyQueued"));
+        const artifacts = await getRepositoryGraphifyArtifacts(repositoryId);
+        setGraphifyArtifacts(artifacts);
+        await loadLogs();
+      } else {
+        toast.error(result.message || t("admin.repositories.management.toasts.graphifyFailed"));
+      }
+    } catch (error) {
+      console.error("Failed to generate Graphify artifacts:", error);
+      toast.error(t("admin.repositories.management.toasts.graphifyFailed"));
+    } finally {
+      setGeneratingGraphify(false);
     }
   };
 
@@ -913,6 +977,10 @@ export default function AdminRepositoryManagementPage() {
             {triggeringIncremental ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
             {t("admin.repositories.management.triggerIncremental")}
           </Button>
+          <Button variant="outline" onClick={handleGenerateGraphify} disabled={generatingGraphify || !selectedBranch}>
+            {generatingGraphify ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+            {t("admin.repositories.management.generateGraphify")}
+          </Button>
           <Button variant="destructive" onClick={handleRegenerateRepository} disabled={regeneratingRepo}>
             {regeneratingRepo ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
             {t("admin.repositories.management.regenerateAll")}
@@ -969,6 +1037,19 @@ export default function AdminRepositoryManagementPage() {
             <Card className="p-3 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-sm">
               <p className="text-xs text-muted-foreground">{t("admin.repositories.management.avgDocsPerLanguage")}</p>
               <p className="text-xl font-semibold">{branchLanguageMetrics.avgDocsPerLanguage}</p>
+            </Card>
+            <Card className="p-3 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-sm">
+              <p className="text-xs text-muted-foreground">{t("admin.repositories.management.graphifyStatus")}</p>
+              <p className="text-xl font-semibold">
+                {selectedGraphifyArtifact
+                  ? getLocalizedTaskStatus(selectedGraphifyArtifact.statusName)
+                  : t("admin.repositories.management.notGenerated")}
+              </p>
+              {selectedGraphifyArtifact?.completedAt && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {new Date(selectedGraphifyArtifact.completedAt).toLocaleString(dateLocale)}
+                </p>
+              )}
             </Card>
           </div>
         </div>

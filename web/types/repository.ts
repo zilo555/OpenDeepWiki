@@ -14,6 +14,9 @@ export interface RepoTreeResponse {
   exists: boolean;
   currentBranch: string;
   currentLanguage: string;
+  hasGraphifyArtifact?: boolean;
+  graphifyStatus?: number | null;
+  graphifyStatusName?: string | null;
 }
 
 export interface RepoBranchesResponse {
@@ -125,7 +128,7 @@ export interface UpdateVisibilityResponse {
 }
 
 // Processing log types
-export type ProcessingStep = "Workspace" | "Catalog" | "Content" | "Complete";
+export type ProcessingStep = "Workspace" | "Catalog" | "Content" | "Translation" | "MindMap" | "Complete" | "Graphify";
 
 // 思维导图状态
 export type MindMapStatus = "Pending" | "Processing" | "Completed" | "Failed";
@@ -162,7 +165,10 @@ export const ProcessingStepMap: Record<number, ProcessingStep> = {
   0: "Workspace",
   1: "Catalog",
   2: "Content",
-  3: "Complete",
+  3: "Translation",
+  4: "MindMap",
+  5: "Complete",
+  6: "Graphify",
 };
 
 export interface ProcessingLogItem {

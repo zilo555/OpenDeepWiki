@@ -92,6 +92,7 @@ export default async function RepoLayout({ children, params }: RepoLayoutProps) 
         initialBranches={branches ?? undefined}
         initialBranch={tree.currentBranch}
         initialLanguage={tree.currentLanguage}
+        initialHasGraphifyArtifact={tree.hasGraphifyArtifact}
         uiLocale={uiLocale}
       >
         {children}

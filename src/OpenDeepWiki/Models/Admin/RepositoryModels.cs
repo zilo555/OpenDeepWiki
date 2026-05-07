@@ -182,6 +182,27 @@ public class UpdateRepositoryDocumentContentRequest
     public string Content { get; set; } = string.Empty;
 }
 
+public class GenerateGraphifyArtifactRequest
+{
+    public string? BranchId { get; set; }
+}
+
+public class AdminGraphifyArtifactDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string RepositoryId { get; set; } = string.Empty;
+    public string RepositoryBranchId { get; set; } = string.Empty;
+    public string BranchName { get; set; } = string.Empty;
+    public int Status { get; set; }
+    public string StatusName { get; set; } = string.Empty;
+    public string? CommitId { get; set; }
+    public string? ErrorMessage { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+    public DateTime? StartedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+}
+
 /// <summary>
 /// 管理端操作统一响应
 /// </summary>

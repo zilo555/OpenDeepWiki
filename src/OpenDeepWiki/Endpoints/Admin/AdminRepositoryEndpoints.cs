@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using OpenDeepWiki.Models.Admin;
 using OpenDeepWiki.Services.Admin;
+using OpenDeepWiki.Services.Graphify;
 
 namespace OpenDeepWiki.Endpoints.Admin;
 
@@ -118,6 +119,31 @@ public static class AdminRepositoryEndpoints
         })
         .WithName("AdminRegenerateRepository")
         .WithSummary("触发仓库全量重生成");
+
+        // 获取 Graphify 生成状态
+        repoGroup.MapGet("/{id}/graphify", async (
+            string id,
+            [FromServices] IGraphifyArtifactService graphifyService,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await graphifyService.GetRepositoryArtifactsAsync(id, cancellationToken);
+            return Results.Ok(new { success = true, data = result });
+        })
+        .WithName("AdminGetRepositoryGraphifyArtifacts")
+        .WithSummary("获取仓库 Graphify 生成状态");
+
+        // 触发 Graphify 生成
+        repoGroup.MapPost("/{id}/graphify/generate", async (
+            string id,
+            [FromBody] GenerateGraphifyArtifactRequest request,
+            [FromServices] IGraphifyArtifactService graphifyService,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await graphifyService.EnqueueGenerationAsync(id, request.BranchId, cancellationToken);
+            return Results.Ok(new { success = result.Success, message = result.Message, data = result });
+        })
+        .WithName("AdminGenerateRepositoryGraphify")
+        .WithSummary("触发仓库 Graphify 图谱生成");
 
         // 触发指定文档重生成
         repoGroup.MapPost("/{id}/documents/regenerate", async (

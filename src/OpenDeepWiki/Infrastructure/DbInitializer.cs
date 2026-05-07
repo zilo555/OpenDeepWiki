@@ -52,6 +52,22 @@ public static class DbInitializer
 
         // 初始化系统设置默认值（仅在首次运行时从环境变量创建）
         await SystemSettingDefaults.InitializeDefaultsAsync(configuration, context);
+
+        await RefreshBundledSkillsAsync(scope.ServiceProvider);
+    }
+
+    private static async Task RefreshBundledSkillsAsync(IServiceProvider serviceProvider)
+    {
+        try
+        {
+            var toolsService = serviceProvider.GetRequiredService<IAdminToolsService>();
+            await toolsService.RefreshSkillsFromDiskAsync();
+        }
+        catch (Exception ex)
+        {
+            var logger = serviceProvider.GetService<ILoggerFactory>()?.CreateLogger("DbInitializer");
+            logger?.LogWarning(ex, "Failed to refresh bundled skills from disk");
+        }
     }
 
     private static async Task InitializeAdminUserAsync(IContext context)

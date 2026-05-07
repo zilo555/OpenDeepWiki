@@ -36,7 +36,12 @@ public enum ProcessingStep
     /// <summary>
     /// 完成
     /// </summary>
-    Complete = 5
+    Complete = 5,
+
+    /// <summary>
+    /// 生成 Graphify 图谱
+    /// </summary>
+    Graphify = 6
 }
 
 /// <summary>

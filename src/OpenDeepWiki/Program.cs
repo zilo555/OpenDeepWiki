@@ -12,6 +12,7 @@ using OpenDeepWiki.Infrastructure;
 using OpenDeepWiki.Services.Admin;
 using OpenDeepWiki.Services.Auth;
 using OpenDeepWiki.Services.GitHub;
+using OpenDeepWiki.Services.Graphify;
 using OpenDeepWiki.Services.Chat;
 using OpenDeepWiki.Services.MindMap;
 using OpenDeepWiki.Services.Notifications;
@@ -185,6 +186,51 @@ try
         });
     builder.Services.AddScoped<IRepositoryAnalyzer, RepositoryAnalyzer>();
 
+    // Configure Graphify artifact generation
+    builder.Services.AddOptions<GraphifyOptions>()
+        .Bind(builder.Configuration.GetSection("Graphify"))
+        .PostConfigure(options =>
+        {
+            var command = Environment.GetEnvironmentVariable("GRAPHIFY_COMMAND");
+            if (!string.IsNullOrWhiteSpace(command))
+            {
+                options.Command = command;
+            }
+
+            var backend = Environment.GetEnvironmentVariable("GRAPHIFY_BACKEND");
+            if (!string.IsNullOrWhiteSpace(backend))
+            {
+                options.Backend = backend;
+            }
+
+            var model = Environment.GetEnvironmentVariable("GRAPHIFY_MODEL");
+            if (!string.IsNullOrWhiteSpace(model))
+            {
+                options.Model = model;
+            }
+
+            var openAiBaseUrl = Environment.GetEnvironmentVariable("GRAPHIFY_OPENAI_BASE_URL")
+                ?? Environment.GetEnvironmentVariable("OPENAI_BASE_URL");
+            if (!string.IsNullOrWhiteSpace(openAiBaseUrl))
+            {
+                options.OpenAiBaseUrl = openAiBaseUrl;
+            }
+
+            var openAiApiKey = Environment.GetEnvironmentVariable("GRAPHIFY_OPENAI_API_KEY")
+                ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+            if (!string.IsNullOrWhiteSpace(openAiApiKey))
+            {
+                options.OpenAiApiKey = openAiApiKey;
+            }
+
+            var outputRoot = Environment.GetEnvironmentVariable("GRAPHIFY_OUTPUT_ROOT");
+            if (!string.IsNullOrWhiteSpace(outputRoot))
+            {
+                options.OutputRoot = outputRoot;
+            }
+        });
+    builder.Services.AddScoped<IGraphifyCliRunner, GraphifyCliRunner>();
+
     // 配置 Wiki Generator
     builder.Services.AddOptions<WikiGeneratorOptions>()
         .Bind(builder.Configuration.GetSection(WikiGeneratorOptions.SectionName))
@@ -231,6 +277,7 @@ try
     builder.Services.AddScoped<IAdminChatAssistantService, AdminChatAssistantService>();
     builder.Services.AddScoped<IAdminApiKeyService, AdminApiKeyService>();
     builder.Services.AddScoped<IOrganizationService, OrganizationService>();
+    builder.Services.AddScoped<IGraphifyArtifactService, GraphifyArtifactService>();
 
     // 注册动态配置管理器
     builder.Services.AddScoped<IDynamicConfigManager, DynamicConfigManager>();
@@ -247,6 +294,7 @@ try
     builder.Services.AddHostedService<RepositoryProcessingWorker>();
     builder.Services.AddHostedService<TranslationWorker>();
     builder.Services.AddHostedService<MindMapWorker>();
+    builder.Services.AddHostedService<GraphifyArtifactWorker>();
 
     // 配置增量更新选项
     // Requirements: 6.2, 6.3, 6.6 - 可配置的更新间隔
