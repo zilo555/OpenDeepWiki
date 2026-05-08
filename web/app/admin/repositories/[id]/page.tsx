@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -185,6 +185,7 @@ export default function AdminRepositoryManagementPage() {
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [taskRefreshingId, setTaskRefreshingId] = useState<string | null>(null);
   const [taskRetryingId, setTaskRetryingId] = useState<string | null>(null);
+  const graphifyRequestInFlightRef = useRef(false);
 
   const selectedBranch = useMemo(() => {
     if (!management) return null;
@@ -200,6 +201,13 @@ export default function AdminRepositoryManagementPage() {
     if (!selectedBranch) return null;
     return graphifyArtifacts.find((artifact) => artifact.repositoryBranchId === selectedBranch.id) ?? null;
   }, [graphifyArtifacts, selectedBranch]);
+
+  const isGraphifyArtifactActive = useMemo(() => {
+    if (!selectedGraphifyArtifact) return false;
+    return ["pending", "processing"].includes(normalizeTaskStatus(selectedGraphifyArtifact.statusName));
+  }, [selectedGraphifyArtifact]);
+
+  const isGraphifyGenerating = generatingGraphify || isGraphifyArtifactActive;
 
   const isDocDirty = useMemo(
     () => isEditingDoc && doc?.exists && docDraft !== (doc.content ?? ""),
@@ -549,10 +557,7 @@ export default function AdminRepositoryManagementPage() {
   }, [loadDoc]);
 
   useEffect(() => {
-    const isGraphifyActive = selectedGraphifyArtifact &&
-      ["pending", "processing"].includes(normalizeTaskStatus(selectedGraphifyArtifact.statusName));
-
-    if (!isGraphifyActive || !repositoryId) {
+    if (!isGraphifyArtifactActive || !repositoryId) {
       return;
     }
 
@@ -569,7 +574,7 @@ export default function AdminRepositoryManagementPage() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [selectedGraphifyArtifact, repositoryId, loadLogs]);
+  }, [isGraphifyArtifactActive, repositoryId, loadLogs]);
 
   useEffect(() => {
     if (!selectedDocSlug || docTreeNodes.length === 0) return;
@@ -686,6 +691,11 @@ export default function AdminRepositoryManagementPage() {
       return;
     }
 
+    if (graphifyRequestInFlightRef.current || isGraphifyGenerating) {
+      return;
+    }
+
+    graphifyRequestInFlightRef.current = true;
     setGeneratingGraphify(true);
     try {
       const result = await generateRepositoryGraphify(repositoryId, selectedBranch.id);
@@ -701,6 +711,7 @@ export default function AdminRepositoryManagementPage() {
       console.error("Failed to generate Graphify artifacts:", error);
       toast.error(t("admin.repositories.management.toasts.graphifyFailed"));
     } finally {
+      graphifyRequestInFlightRef.current = false;
       setGeneratingGraphify(false);
     }
   };
@@ -973,8 +984,8 @@ export default function AdminRepositoryManagementPage() {
             {triggeringIncremental ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
             {t("admin.repositories.management.triggerIncremental")}
           </Button>
-          <Button variant="outline" onClick={handleGenerateGraphify} disabled={generatingGraphify || !selectedBranch}>
-            {generatingGraphify ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+          <Button variant="outline" onClick={handleGenerateGraphify} disabled={isGraphifyGenerating || !selectedBranch}>
+            {isGraphifyGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
             {t("admin.repositories.management.generateGraphify")}
           </Button>
           <Button variant="destructive" onClick={handleRegenerateRepository} disabled={regeneratingRepo}>
