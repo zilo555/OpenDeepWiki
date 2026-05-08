@@ -201,10 +201,6 @@ export default function AdminRepositoryManagementPage() {
     return graphifyArtifacts.find((artifact) => artifact.repositoryBranchId === selectedBranch.id) ?? null;
   }, [graphifyArtifacts, selectedBranch]);
 
-  const repositoryOwner = repository?.orgName ?? "";
-  const repositoryName = repository?.repoName ?? "";
-  const selectedBranchName = selectedBranch?.name ?? "";
-
   const isDocDirty = useMemo(
     () => isEditingDoc && doc?.exists && docDraft !== (doc.content ?? ""),
     [isEditingDoc, doc, docDraft]
