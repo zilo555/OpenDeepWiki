@@ -6,21 +6,23 @@ import Link from "next/link";
 import type { RepoTreeNode, RepoBranchesResponse } from "@/types/repository";
 import { BranchLanguageSelector } from "./branch-language-selector";
 import { fetchRepoTree, fetchRepoBranches } from "@/lib/repository-api";
-import { ChevronDown, ChevronRight, Network, Download } from "lucide-react";
+import { ChevronDown, ChevronRight, Network, Download, Sparkles } from "lucide-react";
 import { ChatAssistant, buildCatalogMenu } from "@/components/chat";
-import { buildRepoBasePath, buildRepoDocPath, buildRepoMindMapPath } from "@/lib/repo-route";
+import { buildRepoBasePath, buildRepoDocPath, buildRepoGraphifyPath, buildRepoMindMapPath } from "@/lib/repo-route";
 
 const repoUiText = {
   zh: {
     wikiTitle: "仓库 Wiki",
     mindMap: "项目架构",
     exportDocs: "导出文档",
+    graphify: "Graphify",
     exporting: "导出中...",
   },
   en: {
     wikiTitle: "Repository Wiki",
     mindMap: "Project Architecture",
     exportDocs: "Export Docs",
+    graphify: "Graphify",
     exporting: "Exporting...",
   },
 } as const;
@@ -33,6 +35,7 @@ interface RepoShellProps {
   initialBranches?: RepoBranchesResponse;
   initialBranch?: string;
   initialLanguage?: string;
+  initialHasGraphifyArtifact?: boolean;
   uiLocale?: "zh" | "en";
 }
 
@@ -161,6 +164,7 @@ export function RepoShell({
   initialBranches,
   initialBranch,
   initialLanguage,
+  initialHasGraphifyArtifact = false,
   uiLocale = "zh",
 }: RepoShellProps) {
   const searchParams = useSearchParams();
@@ -173,6 +177,7 @@ export function RepoShell({
   const [branches, setBranches] = useState<RepoBranchesResponse | undefined>(initialBranches);
   const [currentBranch, setCurrentBranch] = useState(initialBranch || "");
   const [currentLanguage, setCurrentLanguage] = useState(initialLanguage || "");
+  const [hasGraphifyArtifact, setHasGraphifyArtifact] = useState(initialHasGraphifyArtifact);
   const [isLoading, setIsLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const copy = repoUiText[uiLocale];
@@ -220,6 +225,7 @@ export function RepoShell({
           setCurrentBranch(treeData.currentBranch || "");
           setCurrentLanguage(treeData.currentLanguage || "");
         }
+        setHasGraphifyArtifact(treeData.hasGraphifyArtifact === true);
         if (branchesData) {
           setBranches(branchesData);
         }
@@ -240,6 +246,10 @@ export function RepoShell({
   const mindMapUrl = queryString 
     ? `${buildRepoMindMapPath(owner, repo)}?${queryString}`
     : buildRepoMindMapPath(owner, repo);
+
+  const graphifyUrl = queryString
+    ? `${buildRepoGraphifyPath(owner, repo)}?${queryString}`
+    : buildRepoGraphifyPath(owner, repo);
 
   // 导出功能处理
   const handleExport = async () => {
@@ -340,6 +350,15 @@ export function RepoShell({
               {isExporting ? copy.exporting : copy.exportDocs}
             </span>
         </button>
+        {hasGraphifyArtifact && (
+          <Link
+            href={graphifyUrl}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-700 dark:text-purple-300 hover:bg-purple-500/20 transition-colors"
+          >
+            <Sparkles className="h-4 w-4" />
+            <span className="font-medium text-sm">{copy.graphify}</span>
+          </Link>
+        )}
       </div>
     </div>
   );

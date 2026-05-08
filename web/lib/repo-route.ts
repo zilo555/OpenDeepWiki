@@ -33,3 +33,7 @@ export function buildRepoDocPath(owner: string, repo: string, slug: string): str
 export function buildRepoMindMapPath(owner: string, repo: string): string {
   return `${buildRepoBasePath(owner, repo)}/mindmap`;
 }
+
+export function buildRepoGraphifyPath(owner: string, repo: string): string {
+  return `${buildRepoBasePath(owner, repo)}/graphify`;
+}

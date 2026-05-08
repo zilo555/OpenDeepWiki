@@ -106,6 +106,24 @@ export async function fetchRepoDoc(owner: string, repo: string, slug: string, br
   return (await response.json()) as RepoDocResponse;
 }
 
+export async function fetchGraphifyReport(owner: string, repo: string, branch?: string) {
+  const params = new URLSearchParams();
+  if (branch) params.set("branch", branch);
+
+  const queryString = params.toString();
+  const url = buildApiUrl(
+    `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/graphify/report${queryString ? `?${queryString}` : ""}`,
+  );
+
+  const response = await fetch(url, { cache: "no-store", headers: await getSSRAuthHeaders() });
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch Graphify report");
+  }
+
+  return response.text();
+}
+
 
 /**
  * Submit a repository for wiki generation

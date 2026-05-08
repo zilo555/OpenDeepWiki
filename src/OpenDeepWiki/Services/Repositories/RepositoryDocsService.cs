@@ -8,12 +8,17 @@ using OpenDeepWiki.Models;
 using System.IO.Compression;
 using System.Text;
 using Microsoft.AspNetCore.Authorization;
+using OpenDeepWiki.Services.Graphify;
 
 namespace OpenDeepWiki.Services.Repositories;
 
 [MiniApi(Route = "/api/v1/repos")]
 [Tags("仓库文档")]
-public class RepositoryDocsService(IContext context, IGitPlatformService gitPlatformService, ICache cache)
+public class RepositoryDocsService(
+    IContext context,
+    IGitPlatformService gitPlatformService,
+    ICache cache,
+    IGraphifyArtifactService graphifyArtifactService)
 {
     private const string FallbackLanguageCode = "zh"; // 当没有默认语言标记时的回退语言
     private const int ExportRateLimitMinutes = 5; // 导出限流：5分钟内只能导出一次
@@ -133,7 +138,35 @@ public class RepositoryDocsService(IContext context, IGitPlatformService gitPlat
 
         // 仓库处理完成或失败，获取文档目录
         var branchEntity = await GetBranchAsync(repository.Id, branch);
+        if (branchEntity is null)
+        {
+            return new RepositoryTreeResponse
+            {
+                Owner = repository.OrgName,
+                Repo = repository.RepoName,
+                Exists = true,
+                Status = repository.Status,
+                Nodes = []
+            };
+        }
+
         var language = await GetLanguageAsync(branchEntity.Id, lang);
+        var graphifyState = await GetGraphifyStateAsync(branchEntity.Id);
+        if (language is null)
+        {
+            return new RepositoryTreeResponse
+            {
+                Owner = repository.OrgName,
+                Repo = repository.RepoName,
+                Exists = true,
+                Status = repository.Status,
+                CurrentBranch = branchEntity.BranchName,
+                HasGraphifyArtifact = graphifyState.HasArtifact,
+                GraphifyStatus = graphifyState.Status,
+                GraphifyStatusName = graphifyState.StatusName,
+                Nodes = []
+            };
+        }
 
         var catalogs = await context.DocCatalogs
             .AsNoTracking()
@@ -150,6 +183,11 @@ public class RepositoryDocsService(IContext context, IGitPlatformService gitPlat
                 Repo = repository.RepoName,
                 Exists = true,
                 Status = repository.Status,
+                CurrentBranch = branchEntity.BranchName,
+                CurrentLanguage = language.LanguageCode,
+                HasGraphifyArtifact = graphifyState.HasArtifact,
+                GraphifyStatus = graphifyState.Status,
+                GraphifyStatusName = graphifyState.StatusName,
                 Nodes = []
             };
         }
@@ -175,8 +213,109 @@ public class RepositoryDocsService(IContext context, IGitPlatformService gitPlat
             Exists = true,
             Status = repository.Status,
             CurrentBranch = branchEntity.BranchName,
-            CurrentLanguage = language.LanguageCode
+            CurrentLanguage = language.LanguageCode,
+            HasGraphifyArtifact = graphifyState.HasArtifact,
+            GraphifyStatus = graphifyState.Status,
+            GraphifyStatusName = graphifyState.StatusName
         };
+    }
+
+    [HttpGet("/{owner}/{repo}/graphify")]
+    public async Task<IResult> GetGraphifyAsync(
+        string owner,
+        string repo,
+        [FromQuery] string? branch = null)
+    {
+        (owner, repo) = RepositoryRouteDecoder.DecodeOwnerAndRepo(owner, repo);
+
+        var artifact = await graphifyArtifactService.GetCompletedArtifactAsync(owner, repo, branch);
+        if (artifact == null || string.IsNullOrWhiteSpace(artifact.EntryFilePath))
+        {
+            return Results.NotFound("Graphify artifact not found");
+        }
+
+        var entryPath = Path.GetFullPath(artifact.EntryFilePath);
+        if (!System.IO.File.Exists(entryPath))
+        {
+            return Results.NotFound("Graphify HTML file not found");
+        }
+
+        return Results.File(entryPath, "text/html; charset=utf-8");
+    }
+
+    [HttpGet("/{owner}/{repo}/graphify/report")]
+    public async Task<IResult> GetGraphifyReportAsync(
+        string owner,
+        string repo,
+        [FromQuery] string? branch = null)
+    {
+        (owner, repo) = RepositoryRouteDecoder.DecodeOwnerAndRepo(owner, repo);
+
+        var artifact = await graphifyArtifactService.GetCompletedArtifactAsync(owner, repo, branch);
+        if (artifact == null || string.IsNullOrWhiteSpace(artifact.ReportPath))
+        {
+            return Results.NotFound("Graphify report not found");
+        }
+
+        var reportPath = Path.GetFullPath(artifact.ReportPath);
+        if (!System.IO.File.Exists(reportPath))
+        {
+            return Results.NotFound("Graphify report file not found");
+        }
+
+        return Results.File(reportPath, "text/markdown; charset=utf-8");
+    }
+
+    /// <summary>
+    /// 仅保留已经生成内容的文档及其全部祖先目录节点。
+    /// 用于在仓库生成过程中返回可浏览的部分文档树。
+    /// </summary>
+    private static List<DocCatalog> FilterToReadyWithAncestors(List<DocCatalog> catalogs)
+    {
+        var byId = catalogs.ToDictionary(c => c.Id);
+        var keep = new HashSet<string>();
+
+        foreach (var catalog in catalogs)
+        {
+            if (string.IsNullOrEmpty(catalog.DocFileId))
+            {
+                continue;
+            }
+
+            var current = catalog;
+            while (current is not null && keep.Add(current.Id))
+            {
+                if (current.ParentId is null || !byId.TryGetValue(current.ParentId, out var parent))
+                {
+                    break;
+                }
+                current = parent;
+            }
+        }
+
+        return catalogs
+            .Where(c => keep.Contains(c.Id))
+            .OrderBy(c => c.Order)
+            .ToList();
+    }
+
+    private async Task<(bool HasArtifact, int? Status, string? StatusName)> GetGraphifyStateAsync(
+        string repositoryBranchId)
+    {
+        var artifact = await context.GraphifyArtifacts
+            .AsNoTracking()
+            .FirstOrDefaultAsync(a => a.RepositoryBranchId == repositoryBranchId && !a.IsDeleted);
+
+        if (artifact == null)
+        {
+            return (false, null, null);
+        }
+
+        var hasArtifact = artifact.Status == GraphifyArtifactStatus.Completed &&
+                          !string.IsNullOrWhiteSpace(artifact.EntryFilePath) &&
+                          System.IO.File.Exists(artifact.EntryFilePath);
+
+        return (hasArtifact, (int)artifact.Status, artifact.Status.ToString());
     }
 
     [HttpGet("/{owner}/{repo}/docs/{*slug}")]

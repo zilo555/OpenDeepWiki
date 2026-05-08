@@ -51,4 +51,10 @@ public class RepositoryTreeResponse
     /// 当前语言
     /// </summary>
     public string CurrentLanguage { get; set; } = string.Empty;
+
+    public bool HasGraphifyArtifact { get; set; }
+
+    public int? GraphifyStatus { get; set; }
+
+    public string? GraphifyStatusName { get; set; }
 }
