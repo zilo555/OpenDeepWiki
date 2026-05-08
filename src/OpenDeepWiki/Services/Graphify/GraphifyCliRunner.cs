@@ -388,7 +388,21 @@ public class GraphifyCliRunner : IGraphifyCliRunner
                 return null;
             }
 
-            var labels = ParseLlmCommunityLabels(responseBody, summaries);
+            Dictionary<string, string>? labels;
+            try
+            {
+                labels = ParseLlmCommunityLabels(responseBody, summaries);
+            }
+            catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Graphify community LLM labeling response parse failed. ErrorType: {ErrorType}, Body: {Body}",
+                    ex.GetType().Name,
+                    TrimForLog(responseBody, 1000));
+                return null;
+            }
+
             if (labels == null)
             {
                 _logger.LogWarning(
@@ -432,11 +446,12 @@ Communities:
         IReadOnlyCollection<CommunitySummary> summaries)
     {
         using var responseDocument = JsonDocument.Parse(responseBody);
-        var content = responseDocument.RootElement
-            .GetProperty("choices")[0]
-            .GetProperty("message")
-            .GetProperty("content")
-            .GetString();
+        if (TryParseCommunityLabelsFromElement(responseDocument.RootElement, summaries, out var rootLabels))
+        {
+            return rootLabels;
+        }
+
+        var content = ExtractLlmResponseContent(responseDocument.RootElement);
 
         if (string.IsNullOrWhiteSpace(content))
         {
@@ -444,15 +459,64 @@ Communities:
         }
 
         content = StripMarkdownCodeFence(content);
+        content = ExtractFirstJsonObject(content) ?? content;
         using var contentDocument = JsonDocument.Parse(content);
-        if (!contentDocument.RootElement.TryGetProperty("labels", out var labelsElement) ||
+        return TryParseCommunityLabelsFromElement(contentDocument.RootElement, summaries, out var labels)
+            ? labels
+            : null;
+    }
+
+    private static string? ExtractLlmResponseContent(JsonElement root)
+    {
+        if (root.TryGetProperty("choices", out var choices) &&
+            choices.ValueKind == JsonValueKind.Array &&
+            choices.GetArrayLength() > 0)
+        {
+            var firstChoice = choices[0];
+            if (firstChoice.TryGetProperty("message", out var message) &&
+                message.ValueKind == JsonValueKind.Object &&
+                message.TryGetProperty("content", out var messageContent) &&
+                messageContent.ValueKind == JsonValueKind.String)
+            {
+                return messageContent.GetString();
+            }
+
+            if (firstChoice.TryGetProperty("text", out var text) &&
+                text.ValueKind == JsonValueKind.String)
+            {
+                return text.GetString();
+            }
+        }
+
+        if (root.TryGetProperty("content", out var content) &&
+            content.ValueKind == JsonValueKind.String)
+        {
+            return content.GetString();
+        }
+
+        if (root.TryGetProperty("text", out var rootText) &&
+            rootText.ValueKind == JsonValueKind.String)
+        {
+            return rootText.GetString();
+        }
+
+        return null;
+    }
+
+    private static bool TryParseCommunityLabelsFromElement(
+        JsonElement root,
+        IReadOnlyCollection<CommunitySummary> summaries,
+        out Dictionary<string, string> labels)
+    {
+        labels = [];
+
+        if (!root.TryGetProperty("labels", out var labelsElement) ||
             labelsElement.ValueKind != JsonValueKind.Object)
         {
-            return null;
+            return false;
         }
 
         var expectedIds = summaries.Select(summary => summary.Id).ToHashSet(StringComparer.Ordinal);
-        var labels = new Dictionary<string, string>();
         foreach (var label in labelsElement.EnumerateObject())
         {
             if (!expectedIds.Contains(label.Name) || label.Value.ValueKind != JsonValueKind.String)
@@ -469,7 +533,7 @@ Communities:
 
         if (labels.Count == 0)
         {
-            return null;
+            return false;
         }
 
         foreach (var summary in summaries)
@@ -477,7 +541,7 @@ Communities:
             labels.TryAdd(summary.Id, BuildFallbackCommunityLabel(summary));
         }
 
-        return labels;
+        return true;
     }
 
     private static Dictionary<string, string> BuildFallbackCommunityLabels(
@@ -611,6 +675,61 @@ Communities:
         }
 
         return trimmed[(firstNewline + 1)..lastFence].Trim();
+    }
+
+    private static string? ExtractFirstJsonObject(string value)
+    {
+        var start = value.IndexOf('{');
+        if (start < 0)
+        {
+            return null;
+        }
+
+        var depth = 0;
+        var inString = false;
+        var escaped = false;
+
+        for (var i = start; i < value.Length; i++)
+        {
+            var ch = value[i];
+            if (escaped)
+            {
+                escaped = false;
+                continue;
+            }
+
+            if (ch == '\\' && inString)
+            {
+                escaped = true;
+                continue;
+            }
+
+            if (ch == '"')
+            {
+                inString = !inString;
+                continue;
+            }
+
+            if (inString)
+            {
+                continue;
+            }
+
+            if (ch == '{')
+            {
+                depth++;
+            }
+            else if (ch == '}')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    return value[start..(i + 1)];
+                }
+            }
+        }
+
+        return null;
     }
 
     private static string TrimForLog(string value, int maxLength)
