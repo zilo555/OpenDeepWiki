@@ -46,11 +46,11 @@ public class UnderstandQuicklyPublisher : IUnderstandQuicklyPublisher
     public UnderstandQuicklyPublisher(
         IOptions<UnderstandQuicklyOptions> options,
         ILogger<UnderstandQuicklyPublisher> logger,
-        HttpClient? httpClient = null)
+        HttpClient httpClient)
     {
         _options = options.Value;
         _logger = logger;
-        _httpClient = httpClient ?? new HttpClient();
+        _httpClient = httpClient;
     }
 
     public async Task<UnderstandQuicklyPublishResult> PublishAsync(
@@ -70,14 +70,16 @@ public class UnderstandQuicklyPublisher : IUnderstandQuicklyPublisher
 
         var toolVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown";
 
+        JsonObject root;
         try
         {
-            await using var read = File.OpenRead(result.GraphJsonPath);
-            var node = await JsonNode.ParseAsync(read, cancellationToken: cancellationToken)
-                ?? new JsonObject();
-            await read.DisposeAsync();
+            await using (var read = File.OpenRead(result.GraphJsonPath))
+            {
+                var node = await JsonNode.ParseAsync(read, cancellationToken: cancellationToken)
+                    ?? new JsonObject();
+                root = node.AsObject();
+            }
 
-            var root = node.AsObject();
             var metadata = root["metadata"]?.AsObject() ?? new JsonObject();
             metadata["tool"] = ToolName;
             metadata["tool_version"] = toolVersion;
@@ -92,6 +94,10 @@ public class UnderstandQuicklyPublisher : IUnderstandQuicklyPublisher
                 result.GraphJsonPath,
                 root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }),
                 cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -111,6 +117,12 @@ public class UnderstandQuicklyPublisher : IUnderstandQuicklyPublisher
             return new UnderstandQuicklyPublishResult(true, false, $"invalid repo slug: '{repoSlug}'");
         }
 
+        // The understand-quickly registry fetches graphs from raw.githubusercontent.com,
+        // so it expects a repo-relative path (e.g. "graphify-out/graph.json"), not the
+        // absolute on-disk path under <outputRoot>. Fall back to the file name when
+        // OutputRoot can't be resolved.
+        var graphPath = ToRepoRelativePath(result.OutputRoot, result.GraphJsonPath);
+
         var payload = new JsonObject
         {
             ["event_type"] = DispatchEventType,
@@ -118,7 +130,7 @@ public class UnderstandQuicklyPublisher : IUnderstandQuicklyPublisher
             {
                 ["repo"] = repoSlug,
                 ["schema"] = _options.Schema,
-                ["graph_path"] = result.GraphJsonPath,
+                ["graph_path"] = graphPath,
                 ["tool"] = ToolName,
                 ["tool_version"] = toolVersion,
                 ["commit"] = result.CommitId,
@@ -152,12 +164,63 @@ public class UnderstandQuicklyPublisher : IUnderstandQuicklyPublisher
                     repoSlug);
                 return new UnderstandQuicklyPublishResult(true, false, "repo not registered");
             }
+            // Surface enough detail for ops triage on 401/403/422/etc.
+            string responseBody;
+            try
+            {
+                responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            }
+            catch
+            {
+                responseBody = string.Empty;
+            }
+            if (responseBody.Length > 500)
+            {
+                responseBody = responseBody[..500];
+            }
+            _logger.LogWarning(
+                "UnderstandQuickly: dispatch to {Registry} for {Slug} returned HTTP {Code}. Body: {Body}",
+                _options.RegistryRepo, repoSlug, (int)response.StatusCode, responseBody);
             return new UnderstandQuicklyPublishResult(true, false, $"HTTP {(int)response.StatusCode}");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "UnderstandQuickly: dispatch failed; metadata still stamped.");
             return new UnderstandQuicklyPublishResult(true, false, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Convert an absolute graph.json path under <paramref name="outputRoot"/> into
+    /// a forward-slash, repo-relative path. Avoids leaking server filesystem paths
+    /// into the registry payload (and into GitHub Action logs).
+    /// </summary>
+    public static string ToRepoRelativePath(string? outputRoot, string graphJsonPath)
+    {
+        if (string.IsNullOrWhiteSpace(graphJsonPath))
+        {
+            return string.Empty;
+        }
+        if (!string.IsNullOrWhiteSpace(outputRoot))
+        {
+            try
+            {
+                var rel = Path.GetRelativePath(outputRoot, graphJsonPath);
+                if (!rel.StartsWith("..", StringComparison.Ordinal) &&
+                    !Path.IsPathRooted(rel))
+                {
+                    return rel.Replace(Path.DirectorySeparatorChar, '/');
+                }
+            }
+            catch (ArgumentException)
+            {
+                // Fall through to the file-name fallback.
+            }
+        }
+        return Path.GetFileName(graphJsonPath);
     }
 }

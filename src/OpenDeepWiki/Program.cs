@@ -244,7 +244,8 @@ try
                 options.Enabled = true;
             }
         });
-    builder.Services.AddScoped<IUnderstandQuicklyPublisher, UnderstandQuicklyPublisher>();
+    builder.Services
+        .AddHttpClient<IUnderstandQuicklyPublisher, UnderstandQuicklyPublisher>();
 
     // 配置 Wiki Generator
     builder.Services.AddOptions<WikiGeneratorOptions>()
