@@ -297,6 +297,7 @@ graph TD
 - `AUTO_CONTEXT_COMPRESS_ENABLED`: Whether to enable AI-powered intelligent context compression for long conversations (default: false)
 - `AUTO_CONTEXT_COMPRESS_TOKEN_LIMIT`: Token threshold to trigger context compression. Required when compression is enabled (default: 100000)
 - `AUTO_CONTEXT_COMPRESS_MAX_TOKEN_LIMIT`: Maximum allowed token limit, ensures the token limit doesn't exceed model capabilities (default: 200000)
+- `UNDERSTAND_QUICKLY_TOKEN`: Optional GitHub PAT (`Repository dispatches: write` on `looptech-ai/understand-quickly` only). When set, OpenDeepWiki stamps `metadata.{tool, tool_version, generated_at, commit}` into the generated `graphify-out/graph.json` and fires a `repository_dispatch` so the [understand-quickly](https://github.com/looptech-ai/understand-quickly) registry resyncs the entry. Opt-in; default behavior is unchanged. See [`looptech-ai/uq-publish-action@v0.1.0`](https://github.com/looptech-ai/uq-publish-action) for the recommended CI step.
 
 **Intelligent Context Compression Features:**
 Uses **Prompt Encoding Compression** - an ultra-dense, structured format that achieves 90%+ compression while preserving ALL critical information.
