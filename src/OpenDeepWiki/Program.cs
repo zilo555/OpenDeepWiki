@@ -231,6 +231,22 @@ try
         });
     builder.Services.AddScoped<IGraphifyCliRunner, GraphifyCliRunner>();
 
+    // Opt-in publish to the understand-quickly registry of code-knowledge graphs.
+    // https://github.com/looptech-ai/understand-quickly
+    builder.Services.AddOptions<UnderstandQuicklyOptions>()
+        .Bind(builder.Configuration.GetSection(UnderstandQuicklyOptions.SectionName))
+        .PostConfigure(options =>
+        {
+            var token = Environment.GetEnvironmentVariable("UNDERSTAND_QUICKLY_TOKEN");
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                options.Token = token;
+                options.Enabled = true;
+            }
+        });
+    builder.Services
+        .AddHttpClient<IUnderstandQuicklyPublisher, UnderstandQuicklyPublisher>();
+
     // 配置 Wiki Generator
     builder.Services.AddOptions<WikiGeneratorOptions>()
         .Bind(builder.Configuration.GetSection(WikiGeneratorOptions.SectionName))

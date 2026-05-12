@@ -91,6 +91,7 @@ public class GraphifyArtifactWorker : BackgroundService
         var context = scope.ServiceProvider.GetRequiredService<IContext>();
         var repositoryAnalyzer = scope.ServiceProvider.GetRequiredService<IRepositoryAnalyzer>();
         var runner = scope.ServiceProvider.GetRequiredService<IGraphifyCliRunner>();
+        var publisher = scope.ServiceProvider.GetService<IUnderstandQuicklyPublisher>();
         var processingLogService = scope.ServiceProvider.GetService<IProcessingLogService>();
 
         while (!cancellationToken.IsCancellationRequested)
@@ -117,6 +118,7 @@ public class GraphifyArtifactWorker : BackgroundService
                 context,
                 repositoryAnalyzer,
                 runner,
+                publisher,
                 processingLogService,
                 cancellationToken);
         }
@@ -127,6 +129,7 @@ public class GraphifyArtifactWorker : BackgroundService
         IContext context,
         IRepositoryAnalyzer repositoryAnalyzer,
         IGraphifyCliRunner runner,
+        IUnderstandQuicklyPublisher? publisher,
         IProcessingLogService? processingLogService,
         CancellationToken cancellationToken)
     {
@@ -186,6 +189,27 @@ public class GraphifyArtifactWorker : BackgroundService
                     ProcessingStep.Graphify,
                     $"Graphify generation complete: {branch.BranchName}, duration: {stopwatch.ElapsedMilliseconds}ms",
                     cancellationToken: cancellationToken);
+            }
+
+            // Opt-in publish to understand-quickly. The publisher is a no-op when
+            // disabled; failures inside it are logged but never fail the artifact
+            // (the local graph.json is already written).
+            if (publisher != null && !string.IsNullOrWhiteSpace(repository.OrgName) &&
+                !string.IsNullOrWhiteSpace(repository.RepoName))
+            {
+                try
+                {
+                    await publisher.PublishAsync(
+                        result,
+                        $"{repository.OrgName}/{repository.RepoName}",
+                        cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "UnderstandQuickly publish failed for {Org}/{Repo} — graph.json is still local.",
+                        repository.OrgName, repository.RepoName);
+                }
             }
         }
         catch (Exception ex)
