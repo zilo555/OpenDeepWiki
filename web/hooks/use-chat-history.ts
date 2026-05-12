@@ -37,7 +37,7 @@ export interface TokenUsage {
 /**
  * 内容块类型
  */
-export type ContentBlockType = 'thinking' | 'text' | 'tool_call'
+export type ContentBlockType = 'thinking' | 'text' | 'tool_call' | 'tool_result'
 
 /**
  * 内容块
@@ -46,6 +46,7 @@ export interface ContentBlock {
   type: ContentBlockType
   content?: string           // thinking 或 text 内容
   toolCall?: ToolCall        // tool_call 时的工具调用信息
+  toolResult?: ToolResult    // tool_result 时的工具执行结果
 }
 
 /**
@@ -61,6 +62,7 @@ export interface ChatMessage {
   quotedText?: QuotedText    // 引用的选中文本
   toolCalls?: ToolCall[]     // 工具调用 (兼容旧结构)
   toolResult?: ToolResult    // 工具结果
+  isHidden?: boolean         // 仅用于上下文传递，不在消息列表直接展示
   tokenUsage?: TokenUsage    // Token 使用统计
   timestamp: number
 }

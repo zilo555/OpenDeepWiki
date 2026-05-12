@@ -412,7 +412,7 @@ export default function AdminRepositoryManagementPage() {
     }
   }, [repositoryId, t]);
 
-  const loadLogs = useCallback(async () => {
+  const loadLogs = useCallback(async (options?: { silent?: boolean }) => {
     if (!repository) return;
     setLogsLoading(true);
     try {
@@ -420,7 +420,9 @@ export default function AdminRepositoryManagementPage() {
       setLogs(logData);
     } catch (error) {
       console.error("Failed to load logs:", error);
-      toast.error(t("admin.repositories.management.toasts.loadLogsFailed"));
+      if (!options?.silent) {
+        toast.error(t("admin.repositories.management.toasts.loadLogsFailed"));
+      }
     } finally {
       setLogsLoading(false);
     }

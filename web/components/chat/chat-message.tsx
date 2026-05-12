@@ -196,6 +196,8 @@ function ContentBlockRenderer({ block, index }: { block: ContentBlock; index: nu
       return <ThinkingDisplay key={`thinking-${index}`} thinking={block.content || ""} />
     case "tool_call":
       return block.toolCall ? <ToolCallDisplay key={`tool-${index}`} toolCall={block.toolCall} /> : null
+    case "tool_result":
+      return block.toolResult ? <ToolResultDisplay key={`tool-result-${index}`} toolResult={block.toolResult} /> : null
     case "text":
       return block.content ? <TextContentDisplay key={`text-${index}`} content={block.content} /> : null
     default:
@@ -288,6 +290,15 @@ export function ChatMessageItem({ message }: ChatMessageProps) {
               <ThinkingDisplay thinking={message.thinking} />
             )}
 
+            {/* 兼容旧结构：工具调用 */}
+            {!hasContentBlocks && !isUser && message.toolCalls && message.toolCalls.length > 0 && (
+              <div className="mb-1 w-full">
+                {message.toolCalls.map((toolCall) => (
+                  <ToolCallDisplay key={toolCall.id} toolCall={toolCall} />
+                ))}
+              </div>
+            )}
+
             {/* 文本内容 */}
             {message.content && (
               <div
@@ -331,15 +342,6 @@ export function ChatMessageItem({ message }: ChatMessageProps) {
                     </ReactMarkdown>
                   </div>
                 ) : null}
-              </div>
-            )}
-
-            {/* 兼容旧结构：工具调用 */}
-            {!hasContentBlocks && message.toolCalls && message.toolCalls.length > 0 && (
-              <div className="mt-1 w-full">
-                {message.toolCalls.map((toolCall) => (
-                  <ToolCallDisplay key={toolCall.id} toolCall={toolCall} />
-                ))}
               </div>
             )}
           </>

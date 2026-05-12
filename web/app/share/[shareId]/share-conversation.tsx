@@ -24,6 +24,7 @@ function mapShareMessage(message: ChatShareMessage): ChatMessage {
     quotedText: message.quotedText,
     toolCalls: message.toolCalls,
     toolResult: message.toolResult,
+    isHidden: message.isHidden,
     tokenUsage: message.tokenUsage,
     timestamp: message.timestamp,
   }
@@ -38,7 +39,7 @@ export function ShareConversation({ share }: ShareConversationProps) {
     return `${window.location.origin}/share/${share.shareId}`
   }, [share.shareId])
 
-  const messages = React.useMemo(() => share.messages.map(mapShareMessage), [share.messages])
+  const messages = React.useMemo(() => share.messages.map(mapShareMessage).filter(message => !message.isHidden), [share.messages])
 
   const handleCopy = async () => {
     try {

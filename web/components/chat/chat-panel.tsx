@@ -491,7 +491,7 @@ export function ChatPanel({
     })
 
     let assistantContent = ""
-    let contentBlocks: ContentBlock[] = []
+    const contentBlocks: ContentBlock[] = []
     let currentToolCalls: ToolCall[] = []
     // 用于跟踪当前正在构建的内容块
     let currentThinkingContent = ""
@@ -590,11 +590,17 @@ export function ChatPanel({
 
           case "tool_result":
             const toolResult = event.data as ToolResult
-            // 添加工具结果消息
+            contentBlocks.push({ type: "tool_result", toolResult })
+            updateMessage(assistantMessageId, {
+              content: assistantContent,
+              contentBlocks: [...contentBlocks],
+              toolCalls: currentToolCalls.length > 0 ? [...currentToolCalls] : undefined,
+            })
             addMessage({
               role: "tool",
               content: toolResult.result,
               toolResult,
+              isHidden: true,
             })
             break
 
@@ -650,6 +656,7 @@ export function ChatPanel({
   if (!isOpen) return null
 
   const enabledModels = models.filter(m => m.isEnabled)
+  const visibleMessages = messages.filter(message => !message.isHidden)
   const canSend = (input.trim() || images.length > 0) && selectedModelId && !isLoading
 
   return (
@@ -718,7 +725,7 @@ export function ChatPanel({
               <div className="flex h-full items-center justify-center p-8 text-center text-muted-foreground">
                 {t("assistant.noModels")}
               </div>
-            ) : messages.length === 0 ? (
+            ) : visibleMessages.length === 0 ? (
               <div className="flex h-full items-center justify-center p-8 text-center text-muted-foreground">
                 <div>
                   <p className="mb-2">{t("assistant.greeting")}</p>
@@ -727,7 +734,7 @@ export function ChatPanel({
               </div>
             ) : (
               <div className="w-full">
-                {messages.map((message, index) => (
+                {visibleMessages.map((message, index) => (
                   <div
                     key={message.id}
                     className="animate-in fade-in-0 slide-in-from-bottom-2 duration-300"

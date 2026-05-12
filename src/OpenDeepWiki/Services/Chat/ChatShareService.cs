@@ -55,6 +55,7 @@ public class ChatShareContentBlockDto
     public string Type { get; set; } = "text";
     public string? Content { get; set; }
     public ChatShareToolCallDto? ToolCall { get; set; }
+    public ChatShareToolResultDto? ToolResult { get; set; }
 }
 
 /// <summary>
@@ -71,6 +72,7 @@ public class ChatShareMessageDto
     public ChatShareQuotedTextDto? QuotedText { get; set; }
     public List<ChatShareToolCallDto>? ToolCalls { get; set; }
     public ChatShareToolResultDto? ToolResult { get; set; }
+    public bool IsHidden { get; set; }
     public ChatShareTokenUsageDto? TokenUsage { get; set; }
     public long Timestamp { get; set; }
 }

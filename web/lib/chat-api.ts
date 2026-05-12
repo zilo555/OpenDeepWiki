@@ -81,6 +81,7 @@ export interface ChatShareMessage {
   quotedText?: QuotedText
   toolCalls?: ToolCall[]
   toolResult?: ToolResult
+  isHidden?: boolean
   tokenUsage?: TokenUsage
   timestamp: number
 }
@@ -628,6 +629,7 @@ export function toChatShareMessage(message: ChatMessage): ChatShareMessage {
     quotedText: message.quotedText ? { ...message.quotedText } : undefined,
     toolCalls: message.toolCalls ? message.toolCalls.map(call => ({ ...call })) : undefined,
     toolResult: message.toolResult ? { ...message.toolResult } : undefined,
+    isHidden: message.isHidden,
     tokenUsage: message.tokenUsage ? { ...message.tokenUsage } : undefined,
     timestamp: message.timestamp,
   }
