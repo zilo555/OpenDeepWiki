@@ -180,6 +180,142 @@ public class AdminRepositoryService : IAdminRepositoryService
         }
     }
 
+    private async Task DeleteRepositoryDataAsync(IReadOnlyCollection<string> repositoryIds)
+    {
+        if (repositoryIds.Count == 0)
+        {
+            return;
+        }
+
+        var repositoryIdArray = repositoryIds.Distinct().ToArray();
+        await ClearRepositoryReferencesAsync(repositoryIdArray);
+
+        var repositoryAssignments = await _context.RepositoryAssignments
+            .Where(assignment => repositoryIdArray.Contains(assignment.RepositoryId))
+            .ToListAsync();
+        if (repositoryAssignments.Count > 0)
+        {
+            _context.RepositoryAssignments.RemoveRange(repositoryAssignments);
+        }
+
+        var userBookmarks = await _context.UserBookmarks
+            .Where(bookmark => repositoryIdArray.Contains(bookmark.RepositoryId))
+            .ToListAsync();
+        if (userBookmarks.Count > 0)
+        {
+            _context.UserBookmarks.RemoveRange(userBookmarks);
+        }
+
+        var userSubscriptions = await _context.UserSubscriptions
+            .Where(subscription => repositoryIdArray.Contains(subscription.RepositoryId))
+            .ToListAsync();
+        if (userSubscriptions.Count > 0)
+        {
+            _context.UserSubscriptions.RemoveRange(userSubscriptions);
+        }
+
+        var userDislikes = await _context.UserDislikes
+            .Where(dislike => repositoryIdArray.Contains(dislike.RepositoryId))
+            .ToListAsync();
+        if (userDislikes.Count > 0)
+        {
+            _context.UserDislikes.RemoveRange(userDislikes);
+        }
+
+        var repositoryLogs = await _context.RepositoryProcessingLogs
+            .Where(log => repositoryIdArray.Contains(log.RepositoryId))
+            .ToListAsync();
+        if (repositoryLogs.Count > 0)
+        {
+            _context.RepositoryProcessingLogs.RemoveRange(repositoryLogs);
+        }
+
+        var branchIds = await _context.RepositoryBranches
+            .Where(branch => repositoryIdArray.Contains(branch.RepositoryId))
+            .Select(branch => branch.Id)
+            .ToListAsync();
+
+        var branchIdArray = branchIds.Distinct().ToArray();
+        var branchLanguageIds = branchIdArray.Length == 0
+            ? new List<string>()
+            : await _context.BranchLanguages
+                .Where(language => branchIdArray.Contains(language.RepositoryBranchId))
+                .Select(language => language.Id)
+                .ToListAsync();
+
+        var branchLanguageIdArray = branchLanguageIds.Distinct().ToArray();
+
+        var docCatalogs = branchLanguageIdArray.Length == 0
+            ? new List<DocCatalog>()
+            : await _context.DocCatalogs
+                .Where(catalog => branchLanguageIdArray.Contains(catalog.BranchLanguageId))
+                .ToListAsync();
+        if (docCatalogs.Count > 0)
+        {
+            _context.DocCatalogs.RemoveRange(docCatalogs);
+        }
+
+        var docFiles = branchLanguageIdArray.Length == 0
+            ? new List<DocFile>()
+            : await _context.DocFiles
+                .Where(file => branchLanguageIdArray.Contains(file.BranchLanguageId))
+                .ToListAsync();
+        if (docFiles.Count > 0)
+        {
+            _context.DocFiles.RemoveRange(docFiles);
+        }
+
+        var translationTasks = await _context.TranslationTasks
+            .Where(task => repositoryIdArray.Contains(task.RepositoryId) ||
+                           branchIdArray.Contains(task.RepositoryBranchId) ||
+                           branchLanguageIdArray.Contains(task.SourceBranchLanguageId))
+            .ToListAsync();
+        if (translationTasks.Count > 0)
+        {
+            _context.TranslationTasks.RemoveRange(translationTasks);
+        }
+
+        var incrementalTasks = await _context.IncrementalUpdateTasks
+            .Where(task => repositoryIdArray.Contains(task.RepositoryId) ||
+                           branchIdArray.Contains(task.BranchId))
+            .ToListAsync();
+        if (incrementalTasks.Count > 0)
+        {
+            _context.IncrementalUpdateTasks.RemoveRange(incrementalTasks);
+        }
+
+        var graphifyArtifacts = await _context.GraphifyArtifacts
+            .Where(artifact => repositoryIdArray.Contains(artifact.RepositoryId) ||
+                               branchIdArray.Contains(artifact.RepositoryBranchId))
+            .ToListAsync();
+        if (graphifyArtifacts.Count > 0)
+        {
+            _context.GraphifyArtifacts.RemoveRange(graphifyArtifacts);
+        }
+
+        if (branchLanguageIdArray.Length > 0)
+        {
+            var branchLanguages = await _context.BranchLanguages
+                .Where(language => branchLanguageIdArray.Contains(language.Id))
+                .ToListAsync();
+            if (branchLanguages.Count > 0)
+            {
+                _context.BranchLanguages.RemoveRange(branchLanguages);
+            }
+        }
+
+        if (branchIdArray.Length > 0)
+        {
+            var repositoryBranches = await _context.RepositoryBranches
+                .Where(branch => branchIdArray.Contains(branch.Id))
+                .ToListAsync();
+            if (repositoryBranches.Count > 0)
+            {
+                _context.RepositoryBranches.RemoveRange(repositoryBranches);
+            }
+        }
+    }
+
     private static string GetStatusText(RepositoryStatus status) => status switch
     {
         RepositoryStatus.Pending => "待处理",
